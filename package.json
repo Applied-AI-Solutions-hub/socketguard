@@ -1,0 +1,36 @@
+{
+  "name": "socketguard",
+  "version": "0.1.0",
+  "description": "Scan MCP servers before you trust them with your files and credentials",
+  "type": "module",
+  "bin": {
+    "socketguard": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "src/db"
+  ],
+  "scripts": {
+    "build": "tsc && node scripts/copy-db.mjs",
+    "scan": "node dist/cli.js scan",
+    "dev": "npm run build && node dist/cli.js",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "mcp",
+    "security",
+    "scanner",
+    "ai-agent"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^13.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "typescript": "^5.8.2"
+  }
+}

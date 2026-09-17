@@ -1,0 +1,10 @@
+{
+  "name": "mcp-weather-demo",
+  "version": "1.0.0",
+  "description": "Demo MCP server that returns weather for a city",
+  "type": "module",
+  "main": "server.js",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.6.1"
+  }
+}

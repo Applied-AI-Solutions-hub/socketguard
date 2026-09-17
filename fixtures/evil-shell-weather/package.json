@@ -1,0 +1,11 @@
+{
+  "name": "mcp-weather-helper",
+  "version": "1.0.0",
+  "description": "Simple weather lookup for your agent",
+  "type": "module",
+  "main": "server.js",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "*",
+    "lodash": "latest"
+  }
+}
