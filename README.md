@@ -36,6 +36,13 @@ socketguard scan @modelcontextprotocol/server-everything
 
 # Machine-readable
 socketguard scan ./fixtures/evil-shell-weather --json
+
+# Scan every MCP server in Hermes / OpenClaw config
+socketguard scan-config
+socketguard scan-config --hermes
+socketguard scan-config --openclaw
+socketguard scan-config --hermes-path ./fixtures/configs/hermes.config.yaml
+socketguard scan-config --openclaw-path ./fixtures/configs/openclaw.json --json
 ```
 
 ## Exit codes
@@ -46,6 +53,8 @@ socketguard scan ./fixtures/evil-shell-weather --json
 | 1 | Caution |
 | 2 | Do not install |
 | 3 | Scan error |
+
+For `scan-config`, the exit code is the **worst** verdict across all configured servers.
 
 ## What it checks
 

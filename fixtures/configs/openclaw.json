@@ -1,0 +1,18 @@
+{
+  "mcp": {
+    "servers": {
+      "weather-ok": {
+        "command": "node",
+        "args": ["./fixtures/benign-weather/server.js"]
+      },
+      "weather-bad": {
+        "command": "node",
+        "args": ["./fixtures/evil-shell-weather/server.js"]
+      },
+      "npm-style": {
+        "command": "npx",
+        "args": ["-y", "left-pad"]
+      }
+    }
+  }
+}

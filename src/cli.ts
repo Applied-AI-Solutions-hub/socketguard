@@ -3,6 +3,11 @@ import { Command } from "commander";
 import { scanTarget } from "./scan.js";
 import { exitCodeFor } from "./verdict.js";
 import type { ScanResult } from "./types.js";
+import {
+  exitCodeForConfigScan,
+  scanAgentConfigs,
+} from "./config/scanConfig.js";
+import type { ConfigScanSummary } from "./config/types.js";
 
 const program = new Command();
 
@@ -46,6 +51,69 @@ program
     }
   });
 
+program
+  .command("scan-config")
+  .description(
+    "Scan MCP servers configured for Hermes and/or OpenClaw",
+  )
+  .option("--hermes", "Only scan ~/.hermes/config.yaml", false)
+  .option("--openclaw", "Only scan ~/.openclaw/openclaw.json", false)
+  .option("--hermes-path <path>", "Override Hermes config path")
+  .option("--openclaw-path <path>", "Override OpenClaw config path")
+  .option("--json", "Print machine-readable JSON", false)
+  .action(
+    async (opts: {
+      hermes?: boolean;
+      openclaw?: boolean;
+      hermesPath?: string;
+      openclawPath?: string;
+      json?: boolean;
+    }) => {
+      try {
+        const summary = await scanAgentConfigs({
+          hermes: opts.hermes || undefined,
+          openclaw: opts.openclaw || undefined,
+          hermesPath: opts.hermesPath,
+          openclawPath: opts.openclawPath,
+        });
+
+        if (opts.json) {
+          console.log(JSON.stringify(summary, null, 2));
+        } else {
+          printConfigHuman(summary);
+        }
+
+        if (summary.configPaths.length === 0) {
+          if (!opts.json) {
+            console.error(
+              "No Hermes or OpenClaw config found. Pass --hermes-path / --openclaw-path, or install those agents first.",
+            );
+          }
+          process.exitCode = 3;
+          return;
+        }
+
+        process.exitCode = exitCodeForConfigScan(summary);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (opts.json) {
+          console.log(
+            JSON.stringify({
+              worstVerdict: "error",
+              hosts: [],
+              configPaths: [],
+              servers: [],
+              error: message,
+            }),
+          );
+        } else {
+          console.error(`Socketguard error: ${message}`);
+        }
+        process.exitCode = 3;
+      }
+    },
+  );
+
 program.parse();
 
 function printHuman(result: ScanResult): void {
@@ -69,7 +137,66 @@ function printHuman(result: ScanResult): void {
   }
   if (result.findings.length > 2) {
     console.log("");
-    console.log(`Also found ${result.findings.length - 2} more issue(s). Use --json for the full list.`);
+    console.log(
+      `Also found ${result.findings.length - 2} more issue(s). Use --json for the full list.`,
+    );
   }
   console.log("");
+}
+
+function printConfigHuman(summary: ConfigScanSummary): void {
+  console.log("");
+  console.log("Socketguard  scan-config");
+  if (summary.configPaths.length === 0) {
+    console.log("No configs found.");
+    console.log("");
+    return;
+  }
+
+  console.log(`Hosts:    ${summary.hosts.join(", ") || "(none)"}`);
+  for (const p of summary.configPaths) {
+    console.log(`Config:   ${p}`);
+  }
+  console.log(`Servers:  ${summary.servers.length}`);
+  console.log(`Worst:    ${labelWorst(summary.worstVerdict)}`);
+  console.log("");
+
+  if (summary.servers.length === 0) {
+    console.log("No MCP servers listed in the config file(s).");
+    console.log("");
+    return;
+  }
+
+  const nameWidth = Math.min(
+    28,
+    Math.max(8, ...summary.servers.map((s) => s.name.length)),
+  );
+
+  for (const s of summary.servers) {
+    const host = s.host.padEnd(9);
+    const name = s.name.padEnd(nameWidth);
+    const enabled = s.enabled ? "on " : "off";
+    let verdict = "skip";
+    let why = s.note ?? s.error ?? "";
+    if (s.result) {
+      verdict = s.result.label;
+      why = s.result.reasons[0] ?? "";
+    } else if (s.error) {
+      verdict = "Error";
+    }
+    const shortWhy =
+      why.length > 90 ? `${why.slice(0, 87)}...` : why;
+    console.log(
+      `${host} ${name} ${enabled}  ${verdict.padEnd(14)}  ${shortWhy}`,
+    );
+  }
+  console.log("");
+}
+
+function labelWorst(v: ConfigScanSummary["worstVerdict"]): string {
+  if (v === "do_not_install") return "Do not install";
+  if (v === "caution") return "Caution";
+  if (v === "safe") return "Safe";
+  if (v === "error") return "Error";
+  return "Empty";
 }

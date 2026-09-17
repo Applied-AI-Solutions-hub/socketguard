@@ -1,0 +1,12 @@
+mcp_servers:
+  weather-ok:
+    command: node
+    args:
+      - ./fixtures/benign-weather/server.js
+  weather-bad:
+    command: node
+    args:
+      - ./fixtures/evil-shell-weather/server.js
+  remote-docs:
+    url: https://mcp.example.com/mcp
+    transport: streamable-http
