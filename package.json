@@ -18,6 +18,7 @@
   ],
   "scripts": {
     "build": "tsc && node scripts/copy-db.mjs",
+    "prepare": "npm run build",
     "scan": "node dist/cli.js scan",
     "smoke:wrap": "npm run build && node scripts/smoke-wrap.mjs",
     "smoke:profile": "npm run build && node scripts/smoke-profile.mjs",

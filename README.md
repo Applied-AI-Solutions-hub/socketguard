@@ -6,33 +6,47 @@ Local-first CLI for any MCP host (**Hermes**, **OpenClaw**, and others).
 
 **Repo:** https://github.com/Applied-AI-Solutions-hub/socketguard
 
-## Install
+## Install (from GitHub — no npm account needed)
+
+Requires **Node 20+**.
 
 ```bash
-# From source
+# Global CLI from the public repo
+npm install -g github:Applied-AI-Solutions-hub/socketguard
+
+socketguard --help
+socketguard scan ./path/to/mcp-server
+```
+
+One-shot without a global install:
+
+```bash
+npx --yes github:Applied-AI-Solutions-hub/socketguard scan ./path/to/mcp-server
+```
+
+Or clone and build:
+
+```bash
 git clone https://github.com/Applied-AI-Solutions-hub/socketguard.git
 cd socketguard
 npm install
 npm run build
-
-# After npm publish
-npx socketguard scan ./path/to/mcp-server
-npm i -g socketguard
+node dist/cli.js scan ./path/to/mcp-server
 ```
 
 ## Quick path (what people actually want)
 
 ```bash
 # 1) Scan and save an approved-tool profile
-node dist/cli.js scan ./path/to/mcp-server --save-profile my-server
+socketguard scan ./path/to/mcp-server --save-profile my-server
 
 # 2) Print an OpenClaw/Hermes snippet that wraps the server
-node dist/cli.js emit-wrap --host openclaw --name my-server \
+socketguard emit-wrap --host openclaw --name my-server \
   --cmd npx --arg -y --arg @scope/mcp-server \
   --policy balanced --profile my-server
 
 # 3) Or wrap directly
-node dist/cli.js wrap --policy balanced --profile my-server --ask -- \
+socketguard wrap --policy balanced --profile my-server --ask -- \
   npx -y @scope/mcp-server
 ```
 
