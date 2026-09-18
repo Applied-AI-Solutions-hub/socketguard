@@ -9,10 +9,15 @@ Local-first CLI for any MCP host (**Hermes**, **OpenClaw**, and others).
 ## Install
 
 ```bash
+# From source
 git clone https://github.com/Applied-AI-Solutions-hub/socketguard.git
 cd socketguard
 npm install
 npm run build
+
+# After npm publish
+npx socketguard scan ./path/to/mcp-server
+npm i -g socketguard
 ```
 
 ## Quick path (what people actually want)
