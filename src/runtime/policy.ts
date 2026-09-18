@@ -1,12 +1,11 @@
 export type PolicyPosture = "paranoid" | "balanced" | "permissive";
 
-export type PolicyAction = "allow" | "block" | "sanitize";
+export type PolicyAction = "allow" | "block" | "sanitize" | "ask";
 
 export interface PolicyDecision {
   action: PolicyAction;
   ruleId: string;
   reason: string;
-  /** When sanitize, replacement payload fragment for args or result text */
   sanitizedText?: string;
 }
 
@@ -15,12 +14,18 @@ export interface ToolCallContext {
   arguments: unknown;
 }
 
+export interface PolicyOptions {
+  posture: PolicyPosture;
+  approvedTools?: string[];
+  ask?: boolean;
+}
+
 const SECRET_PATTERNS: RegExp[] = [
   /\b(sk-[a-zA-Z0-9]{20,})\b/,
   /\b(ghp_[a-zA-Z0-9]{20,})\b/,
   /\b(xox[baprs]-[a-zA-Z0-9-]{10,})\b/i,
   /\b(AKIA[0-9A-Z]{16})\b/,
-  /\b(eyJ[a-zA-Z0-9_-]{20,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,})\b/, // JWT-ish
+  /\b(eyJ[a-zA-Z0-9_-]{20,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,})\b/,
   /\b(OPENAI_API_KEY|ANTHROPIC_API_KEY|AWS_SECRET_ACCESS_KEY)\s*[:=]\s*\S+/i,
   /-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----/,
 ];
@@ -35,8 +40,9 @@ const DANGEROUS_ARG =
 
 export function evaluateToolCall(
   ctx: ToolCallContext,
-  posture: PolicyPosture,
+  opts: PolicyOptions,
 ): PolicyDecision {
+  const posture = opts.posture;
   const blob = `${ctx.toolName}\n${safeStringify(ctx.arguments)}`;
 
   for (const re of SECRET_PATTERNS) {
@@ -55,7 +61,8 @@ export function evaluateToolCall(
       return {
         action: "allow",
         ruleId: "rt-path-traversal-warn",
-        reason: "Path traversal pattern in arguments (allowed in permissive mode).",
+        reason:
+          "Path traversal pattern in arguments (allowed in permissive mode).",
       };
     }
     return {
@@ -75,8 +82,33 @@ export function evaluateToolCall(
     };
   }
 
+  if (opts.approvedTools && opts.approvedTools.length > 0) {
+    const allowed = new Set(opts.approvedTools.map((t) => t.toLowerCase()));
+    if (!allowed.has(ctx.toolName.toLowerCase())) {
+      if (opts.ask) {
+        return {
+          action: "ask",
+          ruleId: "rt-unknown-tool",
+          reason: `Tool "${ctx.toolName}" was not in the approved scan profile.`,
+        };
+      }
+      return {
+        action: "block",
+        ruleId: "rt-unknown-tool",
+        reason: `Tool "${ctx.toolName}" was not in the approved scan profile. Blocked by Socketguard.`,
+      };
+    }
+  }
+
   if (SHELL_TOOL.test(ctx.toolName)) {
     if (posture === "paranoid") {
+      if (opts.ask) {
+        return {
+          action: "ask",
+          ruleId: "rt-shell-tool",
+          reason: `Tool "${ctx.toolName}" looks like shell execution.`,
+        };
+      }
       return {
         action: "block",
         ruleId: "rt-shell-tool",
@@ -84,6 +116,13 @@ export function evaluateToolCall(
       };
     }
     if (posture === "balanced") {
+      if (opts.ask) {
+        return {
+          action: "ask",
+          ruleId: "rt-shell-tool",
+          reason: `Shell-like tool "${ctx.toolName}" requires approval.`,
+        };
+      }
       return {
         action: "allow",
         ruleId: "rt-shell-tool-warn",
@@ -116,16 +155,6 @@ export function evaluateToolResult(
     return { action: "allow", ruleId: "rt-result-ok", reason: "Allowed" };
   }
 
-  if (posture === "permissive") {
-    return {
-      action: "sanitize",
-      ruleId: "rt-secret-in-result",
-      reason: "Secret-like material in tool result; redacted.",
-      sanitizedText: sanitized,
-    };
-  }
-
-  // balanced + paranoid: sanitize (don't fully drop useful results unless pure secret dump)
   return {
     action: "sanitize",
     ruleId: "rt-secret-in-result",
