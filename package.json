@@ -1,6 +1,6 @@
 {
   "name": "socketguard",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Scan and runtime-guard MCP servers before you trust them with your files and credentials",
   "type": "module",
   "bin": {
@@ -14,6 +14,7 @@
     "build": "tsc && node scripts/copy-db.mjs",
     "scan": "node dist/cli.js scan",
     "smoke:wrap": "npm run build && node scripts/smoke-wrap.mjs",
+    "smoke:profile": "npm run build && node scripts/smoke-profile.mjs",
     "dev": "npm run build && node dist/cli.js",
     "prepublishOnly": "npm run build"
   },
