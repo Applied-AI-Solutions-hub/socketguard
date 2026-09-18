@@ -6,18 +6,34 @@
   "bin": {
     "socketguard": "./dist/cli.js"
   },
+  "main": "./dist/scan.js",
+  "exports": {
+    ".": "./dist/scan.js",
+    "./package.json": "./package.json"
+  },
   "files": [
     "dist",
-    "src/db"
+    "LICENSE",
+    "README.md"
   ],
   "scripts": {
     "build": "tsc && node scripts/copy-db.mjs",
     "scan": "node dist/cli.js scan",
     "smoke:wrap": "npm run build && node scripts/smoke-wrap.mjs",
     "smoke:profile": "npm run build && node scripts/smoke-profile.mjs",
+    "smoke": "npm run smoke:wrap && npm run smoke:profile",
+    "pack:check": "npm run build && npm pack --dry-run",
     "dev": "npm run build && node dist/cli.js",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build && npm run smoke:wrap"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Applied-AI-Solutions-hub/socketguard.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Applied-AI-Solutions-hub/socketguard/issues"
+  },
+  "homepage": "https://github.com/Applied-AI-Solutions-hub/socketguard#readme",
   "engines": {
     "node": ">=20"
   },
@@ -27,8 +43,10 @@
     "scanner",
     "ai-agent",
     "hermes",
-    "openclaw"
+    "openclaw",
+    "model-context-protocol"
   ],
+  "author": "Applied AI Solutions",
   "license": "MIT",
   "dependencies": {
     "commander": "^13.1.0",
