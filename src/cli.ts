@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import { scanTarget } from "./scan.js";
+import { scanTarget, scanTargetDetailed } from "./scan.js";
 import { exitCodeFor } from "./verdict.js";
 import type { ScanResult } from "./types.js";
 import {
@@ -8,54 +8,93 @@ import {
   scanAgentConfigs,
 } from "./config/scanConfig.js";
 import type { ConfigScanSummary } from "./config/types.js";
+import {
+  listProfiles,
+  loadProfile,
+  saveProfileFromScan,
+} from "./profile/store.js";
+import {
+  emitHermesSnippet,
+  emitOpenclawSnippet,
+} from "./emit/wrapConfig.js";
 
 const program = new Command();
 
 program
   .name("socketguard")
   .description(
-    "Scan an MCP server before you trust it with your files and credentials",
+    "Scan and runtime-guard MCP servers before you trust them with your files and credentials",
   )
-  .version("0.2.0");
+  .version("0.3.0");
 
 program
   .command("scan")
   .description("Scan a local path, GitHub URL, or npm package")
   .argument("<target>", "Local directory, github.com URL, or npm package name")
   .option("--json", "Print machine-readable JSON", false)
-  .action(async (target: string, opts: { json?: boolean }) => {
-    try {
-      const result = await scanTarget(target);
-      if (opts.json) {
-        console.log(JSON.stringify(result, null, 2));
-      } else {
-        printHuman(result);
+  .option(
+    "--save-profile <name>",
+    "Save an approved-tool profile under ~/.socketguard/profiles",
+  )
+  .action(
+    async (
+      target: string,
+      opts: { json?: boolean; saveProfile?: string },
+    ) => {
+      try {
+        const detail = await scanTargetDetailed(target);
+        const result = detail.result;
+        if (opts.saveProfile) {
+          const profile = await saveProfileFromScan(
+            opts.saveProfile,
+            result,
+            detail.toolNames,
+          );
+          if (!opts.json) {
+            console.error(
+              `Saved profile "${profile.name}" (${profile.approvedTools.length} tools) → ~/.socketguard/profiles/${profile.name}.json`,
+            );
+          }
+        }
+        if (opts.json) {
+          console.log(
+            JSON.stringify(
+              {
+                ...result,
+                toolNames: detail.toolNames,
+                profile: opts.saveProfile ?? null,
+              },
+              null,
+              2,
+            ),
+          );
+        } else {
+          printHuman(result);
+        }
+        process.exitCode = exitCodeFor(result.verdict);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (opts.json) {
+          console.log(
+            JSON.stringify({
+              verdict: "error",
+              label: "Error",
+              reasons: [message],
+              findings: [],
+              target,
+            }),
+          );
+        } else {
+          console.error(`Socketguard error: ${message}`);
+        }
+        process.exitCode = exitCodeFor("error");
       }
-      process.exitCode = exitCodeFor(result.verdict);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (opts.json) {
-        console.log(
-          JSON.stringify({
-            verdict: "error",
-            label: "Error",
-            reasons: [message],
-            findings: [],
-            target,
-          }),
-        );
-      } else {
-        console.error(`Socketguard error: ${message}`);
-      }
-      process.exitCode = exitCodeFor("error");
-    }
-  });
+    },
+  );
 
 program
   .command("scan-config")
-  .description(
-    "Scan MCP servers configured for Hermes and/or OpenClaw",
-  )
+  .description("Scan MCP servers configured for Hermes and/or OpenClaw")
   .option("--hermes", "Only scan ~/.hermes/config.yaml", false)
   .option("--openclaw", "Only scan ~/.openclaw/openclaw.json", false)
   .option("--hermes-path <path>", "Override Hermes config path")
@@ -115,43 +154,132 @@ program
   );
 
 program
+  .command("profiles")
+  .description("List saved scan profiles")
+  .action(async () => {
+    const names = await listProfiles();
+    if (!names.length) {
+      console.log("No profiles yet. Run: socketguard scan <target> --save-profile my-server");
+      return;
+    }
+    for (const name of names) {
+      const p = await loadProfile(name);
+      console.log(
+        `${name.padEnd(24)} ${p.verdict.padEnd(16)} tools=${p.approvedTools.length}  ${p.target}`,
+      );
+    }
+  });
+
+program
   .command("wrap")
   .description(
     "Runtime MCP stdio proxy — sit between Hermes/OpenClaw and an MCP server",
   )
+  .option("--policy <posture>", "paranoid | balanced | permissive", "balanced")
+  .option("--profile <name>", "Enforce approved tools from a saved scan profile")
   .option(
-    "--policy <posture>",
-    "paranoid | balanced | permissive",
-    "balanced",
+    "--ask",
+    "Prompt on the console TTY for shell/unknown tools (does not use MCP stdin)",
+    false,
   )
   .option("--quiet", "Less stderr logging", false)
   .argument("[command...]", "Upstream command and args (or use -- ...)")
-  .action(async (commandParts: string[], opts: { policy?: string; quiet?: boolean }) => {
-    const parts = (() => {
-      const after = extractAfterDashDash(process.argv);
-      return after.length ? after : commandParts;
-    })();
-    if (!parts.length) {
-      console.error(
-        "Usage: socketguard wrap [--policy balanced] -- <command> [args...]\n" +
-          "Example: socketguard wrap --policy balanced -- node ./server.js",
-      );
-      process.exitCode = 3;
-      return;
-    }
+  .action(
+    async (
+      commandParts: string[],
+      opts: {
+        policy?: string;
+        profile?: string;
+        ask?: boolean;
+        quiet?: boolean;
+      },
+    ) => {
+      const parts = (() => {
+        const after = extractAfterDashDash(process.argv);
+        return after.length ? after : commandParts;
+      })();
+      if (!parts.length) {
+        console.error(
+          "Usage: socketguard wrap [--policy balanced] [--profile name] [--ask] -- <command> [args...]",
+        );
+        process.exitCode = 3;
+        return;
+      }
 
-    const posture = normalizePosture(opts.policy ?? "balanced");
-    const { runStdioProxy } = await import("./runtime/proxy.js");
-    const code = await runStdioProxy({
-      command: parts[0],
-      args: parts.slice(1),
-      posture,
-      verbose: !opts.quiet,
-    });
-    process.exitCode = code;
-  });
+      let profile;
+      if (opts.profile) {
+        try {
+          profile = await loadProfile(opts.profile);
+        } catch {
+          console.error(`Profile not found: ${opts.profile}`);
+          process.exitCode = 3;
+          return;
+        }
+      }
+
+      const posture = normalizePosture(opts.policy ?? "balanced");
+      const { runStdioProxy } = await import("./runtime/proxy.js");
+      const code = await runStdioProxy({
+        command: parts[0],
+        args: parts.slice(1),
+        posture,
+        ask: Boolean(opts.ask),
+        profile,
+        verbose: !opts.quiet,
+      });
+      process.exitCode = code;
+    },
+  );
+
+program
+  .command("emit-wrap")
+  .description("Print Hermes or OpenClaw config that routes a server through wrap")
+  .requiredOption("--host <host>", "openclaw | hermes")
+  .requiredOption("--name <serverName>", "MCP server name in the host config")
+  .requiredOption("--cmd <command>", "Upstream command (e.g. npx)")
+  .option("--arg <arg>", "Upstream arg (repeatable)", collect, [])
+  .option("--policy <posture>", "paranoid | balanced | permissive", "balanced")
+  .option("--profile <name>", "Attach a saved profile")
+  .option("--ask", "Enable TTY ask mode", false)
+  .action(
+    (opts: {
+      host: string;
+      name: string;
+      cmd: string;
+      arg: string[];
+      policy: string;
+      profile?: string;
+      ask?: boolean;
+    }) => {
+      const host = opts.host.toLowerCase();
+      if (host !== "openclaw" && host !== "hermes") {
+        console.error("--host must be openclaw or hermes");
+        process.exitCode = 3;
+        return;
+      }
+      const input = {
+        host: host as "openclaw" | "hermes",
+        serverName: opts.name,
+        upstreamCommand: opts.cmd,
+        upstreamArgs: opts.arg,
+        policy: opts.policy,
+        profile: opts.profile,
+        ask: Boolean(opts.ask),
+      };
+      const out =
+        host === "openclaw"
+          ? emitOpenclawSnippet(input)
+          : emitHermesSnippet(input);
+      console.log(out);
+    },
+  );
 
 program.parse();
+
+function collect(value: string, prior: string[]): string[] {
+  prior.push(value);
+  return prior;
+}
 
 function printHuman(result: ScanResult): void {
   const bar =
@@ -221,8 +349,7 @@ function printConfigHuman(summary: ConfigScanSummary): void {
     } else if (s.error) {
       verdict = "Error";
     }
-    const shortWhy =
-      why.length > 90 ? `${why.slice(0, 87)}...` : why;
+    const shortWhy = why.length > 90 ? `${why.slice(0, 87)}...` : why;
     console.log(
       `${host} ${name} ${enabled}  ${verdict.padEnd(14)}  ${shortWhy}`,
     );
@@ -252,3 +379,6 @@ function extractAfterDashDash(argv: string[]): string[] {
   if (idx === -1) return [];
   return argv.slice(idx + 1);
 }
+
+// keep scanTarget import used for types tree-shaking edge cases
+void scanTarget;
