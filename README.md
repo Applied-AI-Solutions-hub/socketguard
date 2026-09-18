@@ -1,10 +1,8 @@
 # Socketguard
 
-Scan an MCP server **before** you trust it with your files and credentials.
+Scan an MCP server **before** you trust it — and **guard tool calls at runtime**.
 
-Phase 1 is a local-first CLI: point it at a repo, package, or folder and get a plain-English verdict — **Safe / Caution / Do not install** — plus one or two reasons why.
-
-Built for any MCP host — including **Hermes** and **OpenClaw** — not locked to a single agent product.
+Local-first CLI for any MCP host (**Hermes**, **OpenClaw**, Claude Desktop configs, etc.).
 
 **Repo:** https://github.com/Applied-AI-Solutions-hub/socketguard
 
@@ -19,33 +17,59 @@ npm run build
 
 ## Usage
 
+### Scan a server (pre-install)
+
 ```bash
-# Local path (primary)
 node dist/cli.js scan ./fixtures/benign-weather
 node dist/cli.js scan ./fixtures/evil-shell-weather
-
-# After linking
-npm link
-socketguard scan ./path/to/mcp-server
-
-# GitHub URL
-socketguard scan https://github.com/owner/mcp-server
-
-# npm package
-socketguard scan @modelcontextprotocol/server-everything
-
-# Machine-readable
-socketguard scan ./fixtures/evil-shell-weather --json
-
-# Scan every MCP server in Hermes / OpenClaw config
-socketguard scan-config
-socketguard scan-config --hermes
-socketguard scan-config --openclaw
-socketguard scan-config --hermes-path ./fixtures/configs/hermes.config.yaml
-socketguard scan-config --openclaw-path ./fixtures/configs/openclaw.json --json
+node dist/cli.js scan https://github.com/owner/mcp-server
+node dist/cli.js scan @modelcontextprotocol/server-everything --json
 ```
 
-## Exit codes
+### Scan Hermes / OpenClaw configs
+
+```bash
+node dist/cli.js scan-config
+node dist/cli.js scan-config --hermes
+node dist/cli.js scan-config --openclaw
+```
+
+### Runtime wrap (live protection)
+
+Point your agent at Socketguard instead of the raw MCP server:
+
+```bash
+socketguard wrap --policy balanced -- <upstream-command> [args...]
+```
+
+**OpenClaw / Hermes example** — wrap a stdio server:
+
+```json
+{
+  "command": "node",
+  "args": [
+    "/path/to/socketguard/dist/cli.js",
+    "wrap",
+    "--policy",
+    "balanced",
+    "--",
+    "npx",
+    "-y",
+    "@modelcontextprotocol/server-filesystem",
+    "/home/you/projects"
+  ]
+}
+```
+
+Policies:
+
+| Posture | Behavior |
+|---------|----------|
+| `paranoid` | Blocks shell-like tools, path traversal, secret-looking args; redacts secrets in results |
+| `balanced` (default) | Blocks secrets + destructive patterns; logs shell-like tools; redacts secrets in results |
+| `permissive` | Blocks clear secret args; redacts secrets in results; otherwise allows |
+
+## Exit codes (`scan` / `scan-config`)
 
 | Code | Meaning |
 |------|---------|
@@ -54,31 +78,14 @@ socketguard scan-config --openclaw-path ./fixtures/configs/openclaw.json --json
 | 2 | Do not install |
 | 3 | Scan error |
 
-For `scan-config`, the exit code is the **worst** verdict across all configured servers.
+## What it checks (scanner)
 
-## What it checks
+- Permission vs purpose
+- Prompt-injection surface in tool descriptions
+- Supply-chain red flags
+- Seeded known-bad signatures
 
-- **Permission vs purpose** — narrow marketing (weather, notes, …) plus shell/filesystem power
-- **Prompt-injection surface** — tool descriptions that try to steer the calling model
-- **Supply-chain flags** — unpinned deps, obfuscated entry, brand-new + powerful packages
-- **Signature DB** — small seeded list of known-bad names/patterns (ships with the package; works offline)
-
-This is high-precision / low-recall on purpose. A clean scan is **not** a guarantee of safety.
-
-## JSON shape
-
-```json
-{
-  "target": "...",
-  "kind": "local",
-  "verdict": "do_not_install",
-  "label": "Do not install",
-  "reasons": ["..."],
-  "findings": [{ "id": "...", "severity": "critical", "title": "...", "detail": "..." }],
-  "packageName": "...",
-  "toolCount": 3
-}
-```
+A clean scan is **not** a guarantee of safety. Prefer `wrap` for live calls.
 
 ## License
 
