@@ -1,7 +1,7 @@
 {
   "name": "socketguard",
-  "version": "0.1.0",
-  "description": "Scan MCP servers before you trust them with your files and credentials",
+  "version": "0.2.0",
+  "description": "Scan and runtime-guard MCP servers before you trust them with your files and credentials",
   "type": "module",
   "bin": {
     "socketguard": "./dist/cli.js"
@@ -13,6 +13,7 @@
   "scripts": {
     "build": "tsc && node scripts/copy-db.mjs",
     "scan": "node dist/cli.js scan",
+    "smoke:wrap": "npm run build && node scripts/smoke-wrap.mjs",
     "dev": "npm run build && node dist/cli.js",
     "prepublishOnly": "npm run build"
   },
@@ -23,7 +24,9 @@
     "mcp",
     "security",
     "scanner",
-    "ai-agent"
+    "ai-agent",
+    "hermes",
+    "openclaw"
   ],
   "license": "MIT",
   "dependencies": {

@@ -16,7 +16,7 @@ program
   .description(
     "Scan an MCP server before you trust it with your files and credentials",
   )
-  .version("0.1.0");
+  .version("0.2.0");
 
 program
   .command("scan")
@@ -114,6 +114,43 @@ program
     },
   );
 
+program
+  .command("wrap")
+  .description(
+    "Runtime MCP stdio proxy — sit between Hermes/OpenClaw and an MCP server",
+  )
+  .option(
+    "--policy <posture>",
+    "paranoid | balanced | permissive",
+    "balanced",
+  )
+  .option("--quiet", "Less stderr logging", false)
+  .argument("[command...]", "Upstream command and args (or use -- ...)")
+  .action(async (commandParts: string[], opts: { policy?: string; quiet?: boolean }) => {
+    const parts = (() => {
+      const after = extractAfterDashDash(process.argv);
+      return after.length ? after : commandParts;
+    })();
+    if (!parts.length) {
+      console.error(
+        "Usage: socketguard wrap [--policy balanced] -- <command> [args...]\n" +
+          "Example: socketguard wrap --policy balanced -- node ./server.js",
+      );
+      process.exitCode = 3;
+      return;
+    }
+
+    const posture = normalizePosture(opts.policy ?? "balanced");
+    const { runStdioProxy } = await import("./runtime/proxy.js");
+    const code = await runStdioProxy({
+      command: parts[0],
+      args: parts.slice(1),
+      posture,
+      verbose: !opts.quiet,
+    });
+    process.exitCode = code;
+  });
+
 program.parse();
 
 function printHuman(result: ScanResult): void {
@@ -199,4 +236,19 @@ function labelWorst(v: ConfigScanSummary["worstVerdict"]): string {
   if (v === "safe") return "Safe";
   if (v === "error") return "Error";
   return "Empty";
+}
+
+function normalizePosture(
+  value: string,
+): "paranoid" | "balanced" | "permissive" {
+  const v = value.toLowerCase();
+  if (v === "paranoid" || v === "balanced" || v === "permissive") return v;
+  console.error(`Unknown policy "${value}", using balanced`);
+  return "balanced";
+}
+
+function extractAfterDashDash(argv: string[]): string[] {
+  const idx = argv.indexOf("--");
+  if (idx === -1) return [];
+  return argv.slice(idx + 1);
 }
